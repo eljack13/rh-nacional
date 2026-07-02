@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RH Nacional · Panel de Recursos Humanos</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6fb; --card:#fff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+  --brand:#4f46e5; --brand2:#6366f1; --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+  --sidebar:#111827; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brand2);outline-offset:-1px}
+label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px}
+
+/* Login */
+#login{position:fixed;inset:0;background:linear-gradient(135deg,#111827 0%,#312e81 100%);display:flex;align-items:center;justify-content:center;z-index:100}
+#login .box{background:#fff;border-radius:20px;padding:40px;width:380px;box-shadow:0 25px 60px rgba(0,0,0,.4)}
+#login h1{font-size:22px;font-weight:800;margin-bottom:4px}
+#login p{color:var(--muted);margin-bottom:24px}
+#login .field{margin-bottom:14px}
+#login button{width:100%;background:var(--brand);color:#fff;border:none;padding:12px;border-radius:10px;font-weight:700;font-size:14px;margin-top:8px}
+#login .err{color:var(--bad);font-size:12px;margin-top:10px;min-height:16px}
+
+/* Layout */
+#app{display:none;min-height:100vh}
+#app.ready{display:flex}
+aside{width:230px;background:var(--sidebar);color:#cbd5e1;padding:22px 14px;display:flex;flex-direction:column;gap:4px;position:fixed;top:0;bottom:0}
+aside .logo{font-size:17px;font-weight:800;color:#fff;padding:0 10px 18px;letter-spacing:.3px}
+aside .logo span{color:#818cf8}
+aside a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;color:#cbd5e1;text-decoration:none;font-weight:500;font-size:13.5px}
+aside a:hover{background:rgba(255,255,255,.07)}
+aside a.active{background:var(--brand);color:#fff;font-weight:600}
+aside .spacer{flex:1}
+aside .user{font-size:12px;padding:10px 12px;border-top:1px solid rgba(255,255,255,.1)}
+aside .user b{color:#fff;display:block}
+aside .out{background:none;border:1px solid rgba(255,255,255,.2);color:#cbd5e1;border-radius:8px;padding:7px;font-size:12px;margin-top:8px;width:100%}
+main{flex:1;margin-left:230px;padding:28px 32px;max-width:1400px}
+h2.title{font-size:21px;font-weight:800;margin-bottom:2px}
+.subtitle{color:var(--muted);margin-bottom:22px;font-size:13px}
+
+/* Cards / KPIs */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:var(--card);border-radius:var(--radius);padding:16px 18px;border:1px solid var(--line)}
+.kpi .v{font-size:26px;font-weight:800;margin:2px 0}
+.kpi .l{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .d{font-size:11.5px;color:var(--muted)}
+.kpi.green .v{color:var(--ok)} .kpi.red .v{color:var(--bad)} .kpi.amber .v{color:var(--warn)} .kpi.brand .v{color:var(--brand)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.card{background:var(--card);border-radius:var(--radius);padding:18px 20px;border:1px solid var(--line);margin-bottom:16px}
+.card h3{font-size:14px;font-weight:700;margin-bottom:14px}
+.card .chartbox{position:relative;height:260px}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:8px 10px;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--line);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:hover td{background:#f8fafc}
+.chip{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700}
+.chip.ok{background:#d1fae5;color:#065f46}
+.chip.warn{background:#fef3c7;color:#92400e}
+.chip.bad{background:#fee2e2;color:#991b1b}
+.chip.info{background:#e0e7ff;color:#3730a3}
+.chip.gray{background:#f1f5f9;color:#475569}
+
+/* Forms & buttons */
+.btn{background:var(--brand);color:#fff;border:none;padding:9px 16px;border-radius:9px;font-weight:600;font-size:13px}
+.btn.sec{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn.sm{padding:5px 10px;font-size:11.5px}
+.btn.danger{background:var(--bad)}
+.btn:disabled{opacity:.5;cursor:default}
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.toolbar input,.toolbar select{width:auto}
+.pill-tabs{display:flex;gap:6px;margin-bottom:16px}
+.pill-tabs button{border:1px solid var(--line);background:#fff;padding:7px 14px;border-radius:20px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.pill-tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.num-row{display:grid;grid-template-columns:repeat(9,1fr);gap:8px}
+.num-row input{text-align:center;padding:8px 4px}
+.muted{color:var(--muted)}
+.right{text-align:right}
+.scroll{overflow-x:auto}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:#fff;padding:12px 20px;border-radius:10px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;z-index:200;pointer-events:none}
+.toast.show{opacity:1}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;z-index:150}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:16px;padding:26px;width:min(680px,92vw);max-height:88vh;overflow:auto}
+.modal h3{margin-bottom:16px;font-size:16px}
+@media(max-width:900px){aside{display:none}main{margin-left:0}.grid2{grid-template-columns:1fr}.num-row{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="box">
+    <h1>RH <span style="color:var(--brand)">Nacional</span></h1>
+    <p>Panel de Recursos Humanos</p>
+    <div class="field"><label>Correo</label><input id="li-email" type="email" placeholder="tu@correo.com"></div>
+    <div class="field"><label>Contraseña</label><input id="li-pass" type="password" placeholder="••••••••"></div>
+    <button onclick="doLogin()">Entrar</button>
+    <div class="err" id="li-err"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <aside>
+    <div class="logo">RH <span>Nacional</span></div>
+    <a href="#dashboard" data-v="dashboard" class="active">📊 Dashboard</a>
+    <a href="#registro" data-v="registro">✍️ Registro diario</a>
+    <a href="#vacantes" data-v="vacantes">📋 Vacantes</a>
+    <a href="#candidatos" data-v="candidatos">🚚 Candidatos operador</a>
+    <a href="#empleados" data-v="empleados">👥 Empleados</a>
+    <a href="#semanal" data-v="semanal">📅 Reporte semanal</a>
+    <div class="spacer"></div>
+    <div class="user"><b id="u-name">—</b><span id="u-mail" class="muted"></span>
+      <button class="out" onclick="sb.auth.signOut()">Cerrar sesión</button>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal"></div></div>
+
+<script>
+const SB_URL = 'https://qjawiuuylecbvbrfafxt.supabase.co';
+const SB_KEY = 'sb_publishable_KI4b75v-GtCMZJiATstruQ_Q4Kb8Mf6';
+const sb = supabase.createClient(SB_URL, SB_KEY);
+let CACHE = {};   // datos compartidos
+let CHARTS = [];
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => (n==null?'—':Number(n).toLocaleString('es-MX'));
+const pct = n => n==null?'—':(n*100).toFixed(1)+'%';
+const hoy = () => new Date().toISOString().slice(0,10);
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function modal(html){ $('#modal').innerHTML=html; $('#modal-bg').classList.add('open'); }
+function closeModal(){ $('#modal-bg').classList.remove('open'); }
+$('#modal-bg').addEventListener('click', e => { if(e.target.id==='modal-bg') closeModal(); });
+function killCharts(){ CHARTS.forEach(c=>c.destroy()); CHARTS=[]; }
+function semaforoChip(s){
+  const m = {'CRÍTICO':'bad','ATENCIÓN':'warn','EN TIEMPO':'ok','CUBIERTA':'info'};
+  return `<span class="chip ${m[s]||'gray'}">${esc(s)}</span>`;
+}
+function csv(rows, name){
+  if(!rows.length) return toast('Sin datos para exportar');
+  const cols = Object.keys(rows[0]);
+  const body = rows.map(r => cols.map(c => `"${String(r[c]??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿'+cols.join(',')+'\n'+body], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name+'.csv'; a.click();
+}
+function semanaISO(d){
+  d = d ? new Date(d) : new Date();
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay()||7));
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(),0,1));
+  return Math.ceil((((t - y0) / 86400000) + 1) / 7);
+}
+
+/* ---------- auth ---------- */
+async function doLogin(){
+  $('#li-err').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('#li-email').value.trim(), password: $('#li-pass').value });
+  if(error) $('#li-err').textContent = 'Correo o contraseña incorrectos.';
+}
+$('#li-pass').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+let SESSION_ON = false;
+sb.auth.onAuthStateChange((_ev, session) => {
+  // OJO: no usar await de consultas aquí dentro (deadlock del auth lock de supabase-js)
+  if(session){
+    if(SESSION_ON) return; // evitar recargas por TOKEN_REFRESHED
+    SESSION_ON = true;
+    $('#login').style.display = 'none';
+    $('#app').classList.add('ready');
+    $('#u-mail').textContent = session.user.email;
+    $('#u-name').textContent = session.user.email.split('@')[0];
+    setTimeout(async () => {
+      const { data: p } = await sb.from('perfiles').select('nombre,rol').eq('id', session.user.id).maybeSingle();
+      if(p?.nombre) $('#u-name').textContent = p.nombre;
+    }, 0);
+    setTimeout(() => nav(location.hash.replace('#','') || 'dashboard'), 0);
+  } else {
+    SESSION_ON = false;
+    $('#login').style.display = 'flex';
+    $('#app').classList.remove('ready');
+  }
+});
+
+/* ---------- nav ---------- */
+const VIEWS = {};
+function nav(v){
+  if(!VIEWS[v]) v = 'dashboard';
+  document.querySelectorAll('aside a').forEach(a => a.classList.toggle('active', a.dataset.v===v));
+  location.hash = v;
+  killCharts();
+  $('#main').innerHTML = '<p class="muted">Cargando…</p>';
+  VIEWS[v]();
+}
+window.addEventListener('hashchange', () => nav(location.hash.replace('#','')));
+
+/* ---------- catálogos ---------- */
+async function loadCats(){
+  if(CACHE.bases) return;
+  const [b, r] = await Promise.all([
+    sb.from('bases').select('*').eq('activa', true).order('nombre'),
+    sb.from('reclutadores').select('*').eq('activo', true).order('nombre'),
+  ]);
+  CACHE.bases = b.data||[]; CACHE.recl = r.data||[];
+}
+const optBases = sel => CACHE.bases.map(b=>`<option ${b.nombre===sel?'selected':''}>${esc(b.nombre)}</option>`).join('');
+const optRecl = sel => CACHE.recl.map(r=>`<option ${r.nombre===sel?'selected':''}>${esc(r.nombre)}</option>`).join('');
+
+/* ============ DASHBOARD ============ */
+VIEWS.dashboard = async function(){
+  await loadCats();
+  const anio = 2026;
+  const [emp, reqs, hc, ops, bajas, reg] = await Promise.all([
+    sb.from('empleados').select('empresa,base,puesto,estatus'),
+    sb.from('v_requisiciones').select('*'),
+    sb.from('hc_semanal').select('*').eq('anio', anio).order('semana'),
+    sb.from('operadores_semanal').select('*').eq('anio', anio).order('semana'),
+    sb.from('bajas').select('fecha_baja,motivo,base,empresa'),
+    sb.from('registro_diario').select('*').gte('fecha', anio+'-01-01'),
+  ]);
+  const E = emp.data||[], R = reqs.data||[], H = hc.data||[], O = ops.data||[], B = bajas.data||[], G = reg.data||[];
+
+  const activos = E.filter(e=>e.estatus==='ACTIVO');
+  const abiertas = R.filter(r=>!r.fecha_cubierta);
+  const criticas = abiertas.filter(r=>r.semaforo==='CRÍTICO');
+  const mesActual = hoy().slice(0,7);
+  const bajasMes = B.filter(b=>(b.fecha_baja||'').startsWith(mesActual));
+  const ingresosMes = G.filter(g=>g.fecha.startsWith(mesActual)).reduce((s,g)=>s+Number(g.ingresos||0),0);
+
+  // última semana HC
+  const wmax = Math.max(...H.map(h=>h.semana), 0);
+  const hw = H.filter(h=>h.semana===wmax);
+  const aut = hw.reduce((s,h)=>s+Number(h.admin_autorizados)+Number(h.op_autorizados),0);
+  const act = hw.reduce((s,h)=>s+Number(h.admin_activos)+Number(h.op_activos),0);
+  const cobertura = aut ? act/aut : null;
+
+  $('#main').innerHTML = `
+    <h2 class="title">Dashboard ejecutivo</h2>
+    <div class="subtitle">Resumen general · Semana ${wmax||semanaISO()} · ${new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}</div>
+    <div class="kpis">
+      <div class="kpi brand"><div class="l">Headcount activo</div><div class="v">${fmt(activos.length)}</div><div class="d">todas las empresas</div></div>
+      <div class="kpi ${cobertura>=0.95?'green':cobertura>=0.85?'amber':'red'}"><div class="l">Cobertura</div><div class="v">${pct(cobertura)}</div><div class="d">meta 95%</div></div>
+      <div class="kpi amber"><div class="l">Vacantes abiertas</div><div class="v">${fmt(abiertas.length)}</div><div class="d">${criticas.length} críticas (+30 días)</div></div>
+      <div class="kpi green"><div class="l">Ingresos del mes</div><div class="v">${fmt(ingresosMes)}</div><div class="d">todos los reclutadores</div></div>
+      <div class="kpi red"><div class="l">Bajas del mes</div><div class="v">${fmt(bajasMes.length)}</div><div class="d">${fmt(B.length)} en el año</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Cobertura por base (semana ${wmax})</h3><div class="chartbox"><canvas id="ch-cob"></canvas></div></div>
+      <div class="card"><h3>Tendencia de headcount activo</h3><div class="chartbox"><canvas id="ch-trend"></canvas></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Ingresos por reclutador (mes actual) vs meta</h3><div class="chartbox"><canvas id="ch-recl"></canvas></div></div>
+      <div class="card"><h3>Bajas por motivo (año)</h3><div class="chartbox"><canvas id="ch-bajas"></canvas></div></div>
+    </div>
+    <div class="card">
+      <h3>⚠️ Vacantes críticas (más de 30 días abiertas)</h3>
+      <div class="scroll"><table><thead><tr><th>Vacante</th><th>Base</th><th>Reclutador</th><th>Estatus</th><th class="right">Días</th><th></th></tr></thead>
+      <tbody>${criticas.sort((a,b)=>b.dias_abierta-a.dias_abierta).slice(0,12).map(r=>`
+        <tr><td><b>${esc(r.vacante)}</b></td><td>${esc(r.base)}</td><td>${esc(r.reclutador)}</td><td>${esc(r.estatus)}</td>
+        <td class="right"><b>${r.dias_abierta}</b></td><td>${semaforoChip(r.semaforo)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">Sin vacantes críticas 🎉</td></tr>'}</tbody></table></div>
+    </div>`;
+
+  // Chart: cobertura por base
+  const cb = hw.map(h=>({base:h.base, cov:(Number(h.admin_autorizados)+Number(h.op_autorizados))?
+    (Number(h.admin_activos)+Number(h.op_activos))/(Number(h.admin_autorizados)+Number(h.op_autorizados)):0}))
+    .sort((a,b)=>a.cov-b.cov);
+  CHARTS.push(new Chart($('#ch-cob'), {type:'bar', data:{labels:cb.map(x=>x.base),
+    datasets:[{data:cb.map(x=>+(x.cov*100).toFixed(1)), backgroundColor:cb.map(x=>x.cov>=0.95?'#10b981':x.cov>=0.85?'#f59e0b':'#ef4444'), borderRadius:5}]},
+    options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{max:120, grid:{display:false}}}, maintainAspectRatio:false}}));
+
+  // Chart: tendencia
+  const weeks = [...new Set(H.map(h=>h.semana))].sort((a,b)=>a-b);
+  const tAct = weeks.map(w=>H.filter(h=>h.semana===w).reduce((s,h)=>s+Number(h.admin_activos)+Number(h.op_activos),0));
+  const tAut = weeks.map(w=>H.filter(h=>h.semana===w).reduce((s,h)=>s+Number(h.admin_autorizados)+Number(h.op_autorizados),0));
+  CHARTS.push(new Chart($('#ch-trend'), {type:'line', data:{labels:weeks.map(w=>'Sem '+w),
+    datasets:[{label:'Activos', data:tAct, borderColor:'#4f46e5', backgroundColor:'rgba(79,70,229,.08)', fill:true, tension:.35},
+              {label:'Autorizados', data:tAut, borderColor:'#94a3b8', borderDash:[6,4], pointRadius:0, tension:.35}]},
+    options:{plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}}));
+
+  // Chart: reclutadores mes
+  const perR = {};
+  G.filter(g=>g.fecha.startsWith(mesActual)).forEach(g=>{ perR[g.reclutador]=(perR[g.reclutador]||0)+Number(g.ingresos||0); });
+  const rl = CACHE.recl.map(r=>r.nombre);
+  CHARTS.push(new Chart($('#ch-recl'), {type:'bar', data:{labels:rl,
+    datasets:[{label:'Ingresos', data:rl.map(n=>perR[n]||0), backgroundColor:'#4f46e5', borderRadius:5},
+              {label:'Meta', data:rl.map(n=>CACHE.recl.find(x=>x.nombre===n)?.meta_ingresos||12), backgroundColor:'#e2e8f0', borderRadius:5}]},
+    options:{plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}}));
+
+  // Chart: bajas por motivo
+  const perM = {};
+  B.forEach(b=>{ const m=(b.motivo||'SIN MOTIVO').slice(0,28); perM[m]=(perM[m]||0)+1; });
+  const top = Object.entries(perM).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  CHARTS.push(new Chart($('#ch-bajas'), {type:'doughnut', data:{labels:top.map(x=>x[0]),
+    datasets:[{data:top.map(x=>x[1]), backgroundColor:['#4f46e5','#818cf8','#f59e0b','#ef4444','#10b981','#06b6d4','#a855f7']}]},
+    options:{plugins:{legend:{position:'right'}}, maintainAspectRatio:false}}));
+};
+
+/* ============ REGISTRO DIARIO ============ */
+VIEWS.registro = async function(){
+  await loadCats();
+  const f = hoy();
+  const { data: regs } = await sb.from('registro_diario').select('*').order('fecha',{ascending:false}).limit(120);
+  const cols = ['guias_entrevista','contactados','socioeconomicos','validaciones','premedicos','psicometrias','pruebas_manejo','citas_laboratorio','ingresos'];
+  const labels = ['Guías','Contact.','Socioec.','Valid.','Preméd.','Psicom.','P. Manejo','Citas Lab','Ingresos'];
+  $('#main').innerHTML = `
+    <h2 class="title">Registro diario de reclutamiento</h2>
+    <div class="subtitle">Captura el avance del día en segundos — una fila por reclutador</div>
+    <div class="card">
+      <div class="formgrid" style="grid-template-columns:180px 200px">
+        <div><label>Fecha</label><input type="date" id="rg-fecha" value="${f}"></div>
+        <div><label>Reclutador</label><select id="rg-recl">${optRecl()}</select></div>
+      </div>
+      <label style="margin-bottom:6px">${labels.map(l=>`<span style="display:inline-block;width:11%">${l}</span>`).join('')}</label>
+      <div class="num-row">${cols.map(c=>`<input type="number" min="0" id="rg-${c}" placeholder="0">`).join('')}</div>
+      <div style="margin-top:12px;display:flex;gap:10px">
+        <div style="flex:1"><input id="rg-obs" placeholder="Observaciones (opcional)"></div>
+        <button class="btn" onclick="saveRegistro()">Guardar registro</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="toolbar"><h3 style="flex:1">Últimos registros</h3>
+      <button class="btn sec sm" onclick='csv(CACHE.regs,"registro_diario")'>⬇ Exportar CSV</button></div>
+      <div class="scroll"><table><thead><tr><th>Fecha</th><th>Reclutador</th>${labels.map(l=>`<th class="right">${l}</th>`).join('')}<th></th></tr></thead>
+      <tbody>${(regs||[]).map(r=>`<tr><td>${r.fecha}</td><td><b>${esc(r.reclutador)}</b></td>
+        ${cols.map(c=>`<td class="right">${fmt(r[c])}</td>`).join('')}
+        <td><button class="btn sec sm" onclick="delRegistro(${r.id})">✕</button></td></tr>`).join('')}</tbody></table></div>
+    </div>`;
+  CACHE.regs = regs||[];
+};
+async function saveRegistro(){
+  const cols = ['guias_entrevista','contactados','socioeconomicos','validaciones','premedicos','psicometrias','pruebas_manejo','citas_laboratorio','ingresos'];
+  const row = { fecha: $('#rg-fecha').value, reclutador: $('#rg-recl').value, observaciones: $('#rg-obs').value||null };
+  cols.forEach(c => row[c] = Number($('#rg-'+c).value||0));
+  if(!row.fecha) return toast('Falta la fecha');
+  const { error } = await sb.from('registro_diario').upsert(row, { onConflict: 'fecha,reclutador' });
+  if(error) return toast('Error: '+error.message);
+  toast('✅ Registro guardado'); nav('registro');
+}
+async function delRegistro(id){
+  if(!confirm('¿Eliminar este registro?')) return;
+  await sb.from('registro_diario').delete().eq('id', id);
+  toast('Registro eliminado'); nav('registro');
+}
+
+/* ============ VACANTES (requisiciones) ============ */
+VIEWS.vacantes = async function(){
+  await loadCats();
+  const { data } = await sb.from('v_requisiciones').select('*').order('fecha_requisicion');
+  CACHE.reqs = data||[];
+  renderVacantes('ABIERTAS');
+};
+function renderVacantes(filtro){
+  const R = CACHE.reqs.filter(r => filtro==='ABIERTAS' ? !r.fecha_cubierta : filtro==='CUBIERTAS' ? !!r.fecha_cubierta : true);
+  $('#main').innerHTML = `
+    <h2 class="title">Vacantes / Requisiciones</h2>
+    <div class="subtitle">Los días abiertos y el semáforo se calculan automáticamente</div>
+    <div class="toolbar">
+      <div class="pill-tabs">
+        ${['ABIERTAS','CUBIERTAS','TODAS'].map(x=>`<button class="${x===filtro?'on':''}" onclick="renderVacantes('${x}')">${x[0]+x.slice(1).toLowerCase()}</button>`).join('')}
+      </div>
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick='csv(CACHE.reqs,"vacantes")'>⬇ CSV</button>
+      <button class="btn" onclick="formVacante()">+ Nueva vacante</button>
+    </div>
+    <div class="card"><div class="scroll"><table>
+      <thead><tr><th>Vacante</th><th>Categoría</th><th>Tipo</th><th>Base</th><th>Reclutador</th><th class="right">Sueldo</th><th>Estatus</th><th class="right">Días</th><th>Semáforo</th><th></th></tr></thead>
+      <tbody>${R.sort((a,b)=>b.dias_abierta-a.dias_abierta).map(r=>`
+        <tr><td><b>${esc(r.vacante)}</b><br><span class="muted" style="font-size:11px">${r.fecha_requisicion}</span></td>
+        <td>${esc(r.categoria)}</td><td>${esc(r.tipo||'—')}</td><td>${esc(r.base||'—')}</td><td>${esc(r.reclutador||'—')}</td>
+        <td class="right">${r.sueldo?('$'+fmt(r.sueldo)):'—'}</td><td style="max-width:170px">${esc(r.estatus)}</td>
+        <td class="right"><b>${r.dias_abierta}</b></td><td>${semaforoChip(r.semaforo)}</td>
+        <td style="white-space:nowrap">
+          ${!r.fecha_cubierta?`<button class="btn sm" onclick="cubrirVacante(${r.id})">✓ Cubierta</button>`:''}
+          <button class="btn sec sm" onclick="formVacante(${r.id})">Editar</button>
+        </td></tr>`).join('') || '<tr><td colspan="10" class="muted">Sin vacantes</td></tr>'}
+      </tbody></table></div></div>`;
+}
+const ESTATUS_REQ = ['BUSQUEDA DE CANDIDATOS','ENTREVISTA 1ER FILTRO','ENTREVISTA JEFE DIRECTO','PSICOMETRIAS','SOCIOECONOMICO','PREMEDICO','CONTRATO PROGRAMADO','PROMOCION INTERNA','PAUSADA'];
+function formVacante(id){
+  const r = id ? CACHE.reqs.find(x=>x.id===id) : {};
+  modal(`<h3>${id?'Editar':'Nueva'} vacante</h3>
+    <div class="formgrid">
+      <div style="grid-column:span 2"><label>Puesto vacante *</label><input id="vc-vacante" value="${esc(r.vacante||'')}"></div>
+      <div><label>Fecha requisición *</label><input type="date" id="vc-fecha" value="${r.fecha_requisicion||hoy()}"></div>
+      <div><label>Categoría</label><select id="vc-cat"><option ${r.categoria==='ADMINISTRATIVO'?'selected':''}>ADMINISTRATIVO</option><option ${r.categoria==='OPERADOR'?'selected':''}>OPERADOR</option></select></div>
+      <div><label>Tipo</label><select id="vc-tipo">${['NUEVA CREACION','SUSTITUCION','REEMPLAZO'].map(t=>`<option ${r.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label>Base</label><select id="vc-base">${optBases(r.base)}</select></div>
+      <div><label>Reclutador</label><select id="vc-recl">${optRecl(r.reclutador)}</select></div>
+      <div><label>Sueldo</label><input type="number" id="vc-sueldo" value="${r.sueldo||''}"></div>
+      <div style="grid-column:span 2"><label>Estatus</label><select id="vc-est">${ESTATUS_REQ.map(e=>`<option ${r.estatus===e?'selected':''}>${e}</option>`).join('')}</select></div>
+      <div style="grid-column:span 2"><label>Motivo / a quién sustituye</label><input id="vc-motivo" value="${esc(r.motivo||'')}"></div>
+      <div style="grid-column:span 2"><label>Observaciones</label><input id="vc-obs" value="${esc(r.observaciones||'')}"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn sec" onclick="closeModal()">Cancelar</button>
+      <button class="btn" onclick="saveVacante(${id||'null'})">Guardar</button>
+    </div>`);
+}
+async function saveVacante(id){
+  const row = {
+    vacante: $('#vc-vacante').value.trim().toUpperCase(), fecha_requisicion: $('#vc-fecha').value,
+    categoria: $('#vc-cat').value, tipo: $('#vc-tipo').value, base: $('#vc-base').value,
+    reclutador: $('#vc-recl').value, sueldo: Number($('#vc-sueldo').value)||null,
+    estatus: $('#vc-est').value, motivo: $('#vc-motivo').value||null, observaciones: $('#vc-obs').value||null,
+    updated_at: new Date().toISOString(),
+  };
+  if(!row.vacante || !row.fecha_requisicion) return toast('Faltan campos obligatorios');
+  const q = id ? sb.from('requisiciones').update(row).eq('id', id) : sb.from('requisiciones').insert(row);
+  const { error } = await q;
+  if(error) return toast('Error: '+error.message);
+  closeModal(); toast('✅ Vacante guardada'); nav('vacantes');
+}
+async function cubrirVacante(id){
+  if(!confirm('¿Marcar esta vacante como cubierta hoy?')) return;
+  await sb.from('requisiciones').update({ fecha_cubierta: hoy(), updated_at: new Date().toISOString() }).eq('id', id);
+  toast('✅ Vacante cubierta'); nav('vacantes');
+}
+
+/* ============ CANDIDATOS OPERADOR ============ */
+const ESTATUS_CAND = ['GUIA DE ENTREVISTA','SOCIOECONOMICO','VALIDACIONES','PREMEDICO CRYO','PSICOMETRIAS','PRUEBA DE MANEJO','CITA LABORATORIO','CONTRATO PROGRAMADO','INGRESADO','DESCARTADO'];
+VIEWS.candidatos = async function(){
+  await loadCats();
+  const { data } = await sb.from('candidatos_operadores').select('*').eq('activo', true).order('created_at');
+  CACHE.cands = data||[];
+  $('#main').innerHTML = `
+    <h2 class="title">Pipeline de candidatos a operador</h2>
+    <div class="subtitle">Avanza el estatus de cada candidato conforme pasa el proceso</div>
+    <div class="toolbar">
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick='csv(CACHE.cands,"candidatos")'>⬇ CSV</button>
+      <button class="btn" onclick="formCandidato()">+ Nuevo candidato</button>
+    </div>
+    <div class="card"><div class="scroll"><table>
+      <thead><tr><th>#</th><th>Nombre</th><th>Base</th><th>Reclutador</th><th>Estatus</th><th>Observaciones</th><th></th></tr></thead>
+      <tbody>${CACHE.cands.map((c,i)=>`
+        <tr><td>${i+1}</td><td><b>${esc(c.nombre)}</b></td><td>${esc(c.base||'—')}</td><td>${esc(c.reclutador||'—')}</td>
+        <td><select style="width:190px" onchange="setCandEstatus(${c.id}, this.value)">${ESTATUS_CAND.map(e=>`<option ${c.estatus===e?'selected':''}>${e}</option>`).join('')}</select></td>
+        <td style="max-width:230px">${esc(c.observaciones||'')}</td>
+        <td style="white-space:nowrap">
+          <button class="btn sm" onclick="ingresarCand(${c.id})" title="Convertir en empleado">✓ Ingresó</button>
+          <button class="btn sec sm" onclick="bajaCand(${c.id})">✕</button>
+        </td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sin candidatos activos</td></tr>'}
+      </tbody></table></div></div>`;
+};
+function formCandidato(){
+  modal(`<h3>Nuevo candidato a operador</h3>
+    <div class="formgrid">
+      <div style="grid-column:span 2"><label>Nombre completo *</label><input id="cd-nombre"></div>
+      <div><label>Base</label><select id="cd-base">${optBases()}</select></div>
+      <div><label>Reclutador</label><select id="cd-recl">${optRecl()}</select></div>
+      <div style="grid-column:span 2"><label>Estatus</label><select id="cd-est">${ESTATUS_CAND.map(e=>`<option>${e}</option>`).join('')}</select></div>
+      <div style="grid-column:span 2"><label>Observaciones</label><input id="cd-obs"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn sec" onclick="closeModal()">Cancelar</button>
+      <button class="btn" onclick="saveCandidato()">Guardar</button>
+    </div>`);
+}
+async function saveCandidato(){
+  const nombre = $('#cd-nombre').value.trim().toUpperCase();
+  if(!nombre) return toast('Falta el nombre');
+  const { error } = await sb.from('candidatos_operadores').insert({
+    nombre, base: $('#cd-base').value, reclutador: $('#cd-recl').value,
+    estatus: $('#cd-est').value, observaciones: $('#cd-obs').value||null });
+  if(error) return toast('Error: '+error.message);
+  closeModal(); toast('✅ Candidato agregado'); nav('candidatos');
+}
+async function setCandEstatus(id, estatus){
+  await sb.from('candidatos_operadores').update({ estatus, updated_at: new Date().toISOString() }).eq('id', id);
+  toast('Estatus actualizado');
+}
+async function bajaCand(id){
+  if(!confirm('¿Descartar candidato? (se oculta de la lista)')) return;
+  await sb.from('candidatos_operadores').update({ activo: false, estatus: 'DESCARTADO' }).eq('id', id);
+  toast('Candidato descartado'); nav('candidatos');
+}
+async function ingresarCand(id){
+  const c = CACHE.cands.find(x=>x.id===id);
+  if(!confirm(`¿Registrar a ${c.nombre} como empleado ACTIVO (operador)?`)) return;
+  const { error } = await sb.from('empleados').insert({
+    empresa: 'FNG', nombre: c.nombre, puesto: c.puesto||'OPERADOR', departamento: 'OPERACIONES',
+    base: c.base, fecha_ingreso: hoy(), estatus: 'ACTIVO', origen_hoja: 'APP' });
+  if(error) return toast('Error: '+error.message);
+  await sb.from('candidatos_operadores').update({ activo:false, estatus:'INGRESADO' }).eq('id', id);
+  toast('🎉 Candidato ingresado como empleado'); nav('candidatos');
+}
+
+/* ============ EMPLEADOS ============ */
+VIEWS.empleados = async function(){
+  await loadCats();
+  $('#main').innerHTML = `
+    <h2 class="title">Empleados</h2>
+    <div class="subtitle">Maestro nacional — todas las empresas y bases</div>
+    <div class="toolbar">
+      <input id="em-q" placeholder="🔍 Buscar por nombre, CURP, puesto…" style="width:280px" oninput="filtraEmp()">
+      <select id="em-empresa" onchange="filtraEmp()"><option value="">Todas las empresas</option>${['FNG','TNIR','TERRENAL','PLAGECO','BECARIOS'].map(e=>`<option>${e}</option>`).join('')}</select>
+      <select id="em-base" onchange="filtraEmp()"><option value="">Todas las bases</option>${optBases()}</select>
+      <select id="em-est" onchange="filtraEmp()"><option value="ACTIVO">Activos</option><option value="BAJA">Bajas</option><option value="">Todos</option></select>
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick='csv(CACHE.empFil||[],"empleados")'>⬇ CSV</button>
+      <button class="btn" onclick="formEmpleado()">+ Alta de empleado</button>
+    </div>
+    <div class="card"><div id="em-tabla"><p class="muted">Cargando…</p></div></div>`;
+  const { data } = await sb.from('empleados').select('id,empresa,nombre,puesto,departamento,zona,base,fecha_ingreso,curp,estatus').order('nombre');
+  CACHE.emps = data||[];
+  filtraEmp();
+};
+function filtraEmp(){
+  const q = ($('#em-q').value||'').toUpperCase();
+  const em = $('#em-empresa').value, ba = $('#em-base').value, es = $('#em-est').value;
+  let L = CACHE.emps.filter(e =>
+    (!em || e.empresa===em) && (!ba || e.base===ba) && (!es || e.estatus===es) &&
+    (!q || (e.nombre||'').includes(q) || (e.curp||'').includes(q) || (e.puesto||'').includes(q)));
+  CACHE.empFil = L;
+  $('#em-tabla').innerHTML = `<div class="muted" style="margin-bottom:8px">${L.length} empleados</div>
+    <div class="scroll"><table><thead><tr><th>Nombre</th><th>Empresa</th><th>Puesto</th><th>Base</th><th>Ingreso</th><th>Estatus</th><th></th></tr></thead>
+    <tbody>${L.slice(0,400).map(e=>`
+      <tr><td><b>${esc(e.nombre)}</b></td><td>${esc(e.empresa)}</td><td>${esc(e.puesto||'—')}</td><td>${esc(e.base||'—')}</td>
+      <td>${e.fecha_ingreso||'—'}</td>
+      <td><span class="chip ${e.estatus==='ACTIVO'?'ok':'bad'}">${e.estatus}</span></td>
+      <td>${e.estatus==='ACTIVO'?`<button class="btn sec sm" onclick="formBaja(${e.id})">Dar de baja</button>`:''}</td></tr>`).join('')}
+    </tbody></table>${L.length>400?'<p class="muted" style="margin-top:8px">Mostrando 400 de '+L.length+' — usa el buscador</p>':''}</div>`;
+}
+function formEmpleado(){
+  modal(`<h3>Alta de empleado</h3>
+    <div class="formgrid">
+      <div style="grid-column:span 2"><label>Nombre completo *</label><input id="ne-nombre"></div>
+      <div><label>Empresa</label><select id="ne-empresa">${['FNG','TNIR','TERRENAL','PLAGECO','BECARIOS'].map(e=>`<option>${e}</option>`).join('')}</select></div>
+      <div><label>Puesto *</label><input id="ne-puesto" placeholder="OPERADOR / AUX ADMVO…"></div>
+      <div><label>Departamento</label><input id="ne-depto" placeholder="OPERACIONES"></div>
+      <div><label>Base</label><select id="ne-base">${optBases()}</select></div>
+      <div><label>Fecha de ingreso</label><input type="date" id="ne-fecha" value="${hoy()}"></div>
+      <div><label>Sexo</label><select id="ne-sexo"><option>MASCULINO</option><option>FEMENINO</option></select></div>
+      <div><label>CURP</label><input id="ne-curp"></div>
+      <div><label>RFC</label><input id="ne-rfc"></div>
+      <div><label>NSS</label><input id="ne-nss"></div>
+      <div><label>Sueldo</label><input type="number" id="ne-sueldo"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn sec" onclick="closeModal()">Cancelar</button>
+      <button class="btn" onclick="saveEmpleado()">Dar de alta</button>
+    </div>`);
+}
+async function saveEmpleado(){
+  const nombre = $('#ne-nombre').value.trim().toUpperCase();
+  const puesto = $('#ne-puesto').value.trim().toUpperCase();
+  if(!nombre || !puesto) return toast('Faltan nombre y puesto');
+  const { error } = await sb.from('empleados').insert({
+    nombre, puesto, empresa: $('#ne-empresa').value, departamento: $('#ne-depto').value.toUpperCase()||null,
+    base: $('#ne-base').value, fecha_ingreso: $('#ne-fecha').value||null, sexo: $('#ne-sexo').value,
+    curp: $('#ne-curp').value.trim().toUpperCase()||null, rfc: $('#ne-rfc').value.trim().toUpperCase()||null,
+    nss: $('#ne-nss').value.trim()||null, sueldo: Number($('#ne-sueldo').value)||null, origen_hoja: 'APP' });
+  if(error) return toast('Error: '+error.message);
+  closeModal(); toast('🎉 Empleado dado de alta'); nav('empleados');
+}
+const MOTIVOS_BAJA = ['RENUNCIA VOLUNTARIA','BAJA SOLICITADA POR LA EMPRESA','ABANDONO DE TRABAJO','TERMINO DE CONTRATO','DESERCION','OTRO'];
+function formBaja(id){
+  const e = CACHE.emps.find(x=>x.id===id);
+  modal(`<h3>Dar de baja a ${esc(e.nombre)}</h3>
+    <div class="formgrid">
+      <div><label>Fecha de baja *</label><input type="date" id="bj-fecha" value="${hoy()}"></div>
+      <div><label>Motivo *</label><select id="bj-motivo">${MOTIVOS_BAJA.map(m=>`<option>${m}</option>`).join('')}</select></div>
+      <div><label>Jefe inmediato</label><input id="bj-jefe"></div>
+      <div><label>Cierre</label><select id="bj-cierre"><option>OK</option><option>PTE</option></select></div>
+      <div style="grid-column:span 2"><label>Comentarios</label><textarea id="bj-coment" rows="2"></textarea></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn sec" onclick="closeModal()">Cancelar</button>
+      <button class="btn danger" onclick="saveBaja(${id})">Confirmar baja</button>
+    </div>`);
+}
+async function saveBaja(id){
+  const e = CACHE.emps.find(x=>x.id===id);
+  const { error } = await sb.from('bajas').insert({
+    empleado_id: id, nombre: e.nombre, puesto: e.puesto, departamento: e.departamento,
+    jefe_inmediato: $('#bj-jefe').value.toUpperCase()||null, fecha_ingreso: e.fecha_ingreso,
+    fecha_baja: $('#bj-fecha').value, empresa: e.empresa, base: e.base,
+    motivo: $('#bj-motivo').value, cierre: $('#bj-cierre').value, comentarios: $('#bj-coment').value||null });
+  if(error) return toast('Error: '+error.message);
+  await sb.from('empleados').update({ estatus:'BAJA', updated_at: new Date().toISOString() }).eq('id', id);
+  closeModal(); toast('Baja registrada'); nav('empleados');
+}
+
+/* ============ REPORTE SEMANAL ============ */
+VIEWS.semanal = async function(){
+  await loadCats();
+  const anio = 2026;
+  const [hc, ops] = await Promise.all([
+    sb.from('hc_semanal').select('*').eq('anio',anio).order('semana').order('base'),
+    sb.from('operadores_semanal').select('*').eq('anio',anio).order('semana').order('base'),
+  ]);
+  CACHE.hc = hc.data||[]; CACHE.ops = ops.data||[];
+  const weeks = [...new Set([...CACHE.hc.map(h=>h.semana), ...CACHE.ops.map(o=>o.semana)])].sort((a,b)=>b-a);
+  const w = weeks[0];
+  $('#main').innerHTML = `
+    <h2 class="title">Reporte semanal</h2>
+    <div class="subtitle">Antes esto era copiar la hoja de la semana pasada — ahora se genera con un clic</div>
+    <div class="toolbar">
+      <label style="margin:0">Semana</label>
+      <select id="sm-week" onchange="renderSemana()">${weeks.map(x=>`<option value="${x}">Semana ${x}</option>`).join('')}</select>
+      <span style="flex:1"></span>
+      <button class="btn" onclick="generarSemana()">⚡ Generar snapshot de la semana actual (${semanaISO()})</button>
+    </div>
+    <div id="sm-body"></div>`;
+  if(w) renderSemana();
+};
+function renderSemana(){
+  const w = Number($('#sm-week').value);
+  const H = CACHE.hc.filter(h=>h.semana===w), O = CACHE.ops.filter(o=>o.semana===w);
+  const tA = H.reduce((s,h)=>s+ +h.admin_autorizados + +h.op_autorizados,0);
+  const tX = H.reduce((s,h)=>s+ +h.admin_activos + +h.op_activos,0);
+  $('#sm-body').innerHTML = `
+    <div class="kpis">
+      <div class="kpi brand"><div class="l">HC autorizado</div><div class="v">${fmt(tA)}</div></div>
+      <div class="kpi brand"><div class="l">HC activo</div><div class="v">${fmt(tX)}</div></div>
+      <div class="kpi ${tX/tA>=0.95?'green':'red'}"><div class="l">Cobertura</div><div class="v">${tA?pct(tX/tA):'—'}</div><div class="d">meta 95%</div></div>
+    </div>
+    <div class="card">
+      <div class="toolbar"><h3 style="flex:1">Headcount por base — semana ${w}</h3>
+      <button class="btn sec sm" onclick='csv(CACHE.hc.filter(h=>h.semana===${w}),"hc_semana_${w}")'>⬇ CSV</button></div>
+      <div class="scroll"><table><thead><tr><th>Base</th><th class="right">Admvos. aut.</th><th class="right">Oper. aut.</th><th class="right">Admvos. activos</th><th class="right">Oper. activos</th><th class="right">Cobertura</th></tr></thead>
+      <tbody>${H.map(h=>{const a=+h.admin_autorizados + +h.op_autorizados, x=+h.admin_activos + +h.op_activos, c=a?x/a:null;
+        return `<tr><td><b>${esc(h.base)}</b></td><td class="right">${fmt(h.admin_autorizados)}</td><td class="right">${fmt(h.op_autorizados)}</td>
+        <td class="right">${fmt(h.admin_activos)}</td><td class="right">${fmt(h.op_activos)}</td>
+        <td class="right"><span class="chip ${c>=0.95?'ok':c>=0.85?'warn':'bad'}">${pct(c)}</span></td></tr>`;}).join('') || '<tr><td colspan="6" class="muted">Sin datos de esta semana</td></tr>'}
+      </tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="toolbar"><h3 style="flex:1">Operadores por base — semana ${w}</h3>
+      <button class="btn sec sm" onclick='csv(CACHE.ops.filter(o=>o.semana===${w}),"operadores_semana_${w}")'>⬇ CSV</button></div>
+      <div class="scroll"><table><thead><tr><th>Base</th><th class="right">Unidades</th><th class="right">Factor</th><th class="right">Requeridos</th><th class="right">Contratados</th><th class="right">Liberados</th><th class="right">En proceso</th><th class="right">Diferencia</th></tr></thead>
+      <tbody>${O.map(o=>{const dif=o.op_contratados-o.op_requeridos;
+        return `<tr><td><b>${esc(o.base)}</b></td><td class="right">${fmt(o.unidades)}</td><td class="right">${o.factor??'—'}</td>
+        <td class="right">${fmt(o.op_requeridos)}</td><td class="right">${fmt(o.op_contratados)}</td>
+        <td class="right">${fmt(o.op_liberados)}</td><td class="right">${fmt(o.en_proceso_liberacion)}</td>
+        <td class="right"><span class="chip ${dif>=0?'ok':'bad'}">${dif>=0?'+':''}${dif}</span></td></tr>`;}).join('') || '<tr><td colspan="8" class="muted">Sin datos de esta semana</td></tr>'}
+      </tbody></table></div>
+    </div>`;
+}
+async function generarSemana(){
+  const w = semanaISO(), anio = 2026;
+  if(!confirm(`Se generará el snapshot de la semana ${w} contando los empleados ACTIVOS por base (los autorizados se copian de la última semana capturada). ¿Continuar?`)) return;
+  const { data: emps } = await sb.from('empleados').select('base,puesto,estatus').eq('estatus','ACTIVO');
+  const { data: prev } = await sb.from('hc_semanal').select('*').eq('anio',anio).order('semana',{ascending:false}).limit(40);
+  const wprev = prev?.length ? Math.max(...prev.map(p=>p.semana)) : null;
+  const autor = {}; (prev||[]).filter(p=>p.semana===wprev).forEach(p=>autor[p.base]={a:p.admin_autorizados,o:p.op_autorizados});
+  const conteo = {};
+  (emps||[]).forEach(e=>{
+    const b = e.base||'SIN BASE';
+    conteo[b] = conteo[b]||{a:0,o:0};
+    if((e.puesto||'').includes('OPERADOR')) conteo[b].o++; else conteo[b].a++;
+  });
+  const rows = Object.entries(conteo).map(([base,c])=>({
+    anio, semana: w, base, admin_activos: c.a, op_activos: c.o,
+    admin_autorizados: autor[base]?.a||0, op_autorizados: autor[base]?.o||0 }));
+  const { error } = await sb.from('hc_semanal').upsert(rows, { onConflict: 'anio,semana,base' });
+  if(error) return toast('Error: '+error.message);
+  toast(`✅ Snapshot de la semana ${w} generado (${rows.length} bases)`); nav('semanal');
+}
+</script>
+</body>
+</html>
