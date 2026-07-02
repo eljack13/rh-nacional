@@ -122,6 +122,7 @@ tr:hover td{background:#f8fafc}
     <a href="#candidatos" data-v="candidatos">🚚 Candidatos operador</a>
     <a href="#empleados" data-v="empleados">👥 Empleados</a>
     <a href="#semanal" data-v="semanal">📅 Reporte semanal</a>
+    <a href="#equipo" data-v="equipo" id="nav-equipo" style="display:none">🔑 Equipo</a>
     <div class="spacer"></div>
     <div class="user"><b id="u-name">—</b><span id="u-mail" class="muted"></span>
       <button class="out" onclick="sb.auth.signOut()">Cerrar sesión</button>
@@ -190,6 +191,8 @@ sb.auth.onAuthStateChange((_ev, session) => {
     setTimeout(async () => {
       const { data: p } = await sb.from('perfiles').select('nombre,rol').eq('id', session.user.id).maybeSingle();
       if(p?.nombre) $('#u-name').textContent = p.nombre;
+      CACHE.rol = p?.rol || 'capturista';
+      if(CACHE.rol === 'admin') $('#nav-equipo').style.display = 'flex';
     }, 0);
     setTimeout(() => nav(location.hash.replace('#','') || 'dashboard'), 0);
   } else {
@@ -654,6 +657,44 @@ function renderSemana(){
       </tbody></table></div>
     </div>`;
 }
+/* ============ EQUIPO (solo admin) ============ */
+VIEWS.equipo = async function(){
+  const { data: perfiles } = await sb.from('perfiles').select('*').order('created_at');
+  $('#main').innerHTML = `
+    <h2 class="title">Equipo de RH</h2>
+    <div class="subtitle">Crea los accesos para reclutadores y gerencia</div>
+    <div class="card">
+      <h3>Nuevo usuario</h3>
+      <div class="formgrid">
+        <div><label>Nombre</label><input id="us-nombre" placeholder="Daniela"></div>
+        <div><label>Correo *</label><input id="us-email" type="email" placeholder="correo@empresa.com"></div>
+        <div><label>Contraseña * (mín. 8)</label><input id="us-pass" placeholder="••••••••"></div>
+        <div><label>Rol</label><select id="us-rol"><option value="capturista">Capturista</option><option value="gerencia">Gerencia</option><option value="admin">Admin</option></select></div>
+      </div>
+      <button class="btn" onclick="crearUsuario()">Crear usuario</button>
+    </div>
+    <div class="card">
+      <h3>Usuarios registrados</h3>
+      <table><thead><tr><th>Nombre</th><th>Rol</th><th>Alta</th></tr></thead>
+      <tbody>${(perfiles||[]).map(p=>`<tr><td><b>${esc(p.nombre||'—')}</b></td>
+        <td><span class="chip ${p.rol==='admin'?'info':'gray'}">${esc(p.rol)}</span></td>
+        <td>${(p.created_at||'').slice(0,10)}</td></tr>`).join('')}</tbody></table>
+    </div>`;
+};
+async function crearUsuario(){
+  const email = $('#us-email').value.trim(), pass = $('#us-pass').value;
+  if(!email || pass.length < 8) return toast('Correo y contraseña de mínimo 8 caracteres');
+  const { data: s } = await sb.auth.getSession();
+  const r = await fetch(SB_URL + '/functions/v1/crear-usuario', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.session.access_token, 'apikey': SB_KEY },
+    body: JSON.stringify({ email, password: pass, nombre: $('#us-nombre').value.trim(), rol: $('#us-rol').value }),
+  });
+  const out = await r.json();
+  if(!r.ok || out.error) return toast('Error: ' + (out.error || r.status));
+  toast('✅ Usuario creado — comparte el correo y contraseña'); nav('equipo');
+}
+
 async function generarSemana(){
   const w = semanaISO(), anio = 2026;
   if(!confirm(`Se generará el snapshot de la semana ${w} contando los empleados ACTIVOS por base (los autorizados se copian de la última semana capturada). ¿Continuar?`)) return;
