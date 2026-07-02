@@ -121,6 +121,7 @@ tr:hover td{background:#f8fafc}
     <a href="#vacantes" data-v="vacantes">📋 Vacantes</a>
     <a href="#candidatos" data-v="candidatos">🚚 Candidatos operador</a>
     <a href="#empleados" data-v="empleados">👥 Empleados</a>
+    <a href="#ingresos" data-v="ingresos">🎉 Ingresos</a>
     <a href="#semanal" data-v="semanal">📅 Reporte semanal</a>
     <a href="#equipo" data-v="equipo" id="nav-equipo" style="display:none">🔑 Equipo</a>
     <div class="spacer"></div>
@@ -230,22 +231,23 @@ const optRecl = sel => CACHE.recl.map(r=>`<option ${r.nombre===sel?'selected':''
 VIEWS.dashboard = async function(){
   await loadCats();
   const anio = 2026;
-  const [emp, reqs, hc, ops, bajas, reg] = await Promise.all([
+  const [emp, reqs, hc, ops, bajas, reg, ing] = await Promise.all([
     sb.from('empleados').select('empresa,base,puesto,estatus'),
     sb.from('v_requisiciones').select('*'),
     sb.from('hc_semanal').select('*').eq('anio', anio).order('semana'),
     sb.from('operadores_semanal').select('*').eq('anio', anio).order('semana'),
     sb.from('bajas').select('fecha_baja,motivo,base,empresa'),
     sb.from('registro_diario').select('*').gte('fecha', anio+'-01-01'),
+    sb.from('ingresos').select('fecha_ingreso,empresa,area').gte('fecha_ingreso', anio+'-01-01'),
   ]);
-  const E = emp.data||[], R = reqs.data||[], H = hc.data||[], O = ops.data||[], B = bajas.data||[], G = reg.data||[];
+  const E = emp.data||[], R = reqs.data||[], H = hc.data||[], O = ops.data||[], B = bajas.data||[], G = reg.data||[], I = ing.data||[];
 
   const activos = E.filter(e=>e.estatus==='ACTIVO');
   const abiertas = R.filter(r=>!r.fecha_cubierta);
   const criticas = abiertas.filter(r=>r.semaforo==='CRÍTICO');
   const mesActual = hoy().slice(0,7);
   const bajasMes = B.filter(b=>(b.fecha_baja||'').startsWith(mesActual));
-  const ingresosMes = G.filter(g=>g.fecha.startsWith(mesActual)).reduce((s,g)=>s+Number(g.ingresos||0),0);
+  const ingresosMes = I.filter(x=>x.fecha_ingreso.startsWith(mesActual)).length;
 
   // última semana HC
   const wmax = Math.max(...H.map(h=>h.semana), 0);
@@ -261,9 +263,10 @@ VIEWS.dashboard = async function(){
       <div class="kpi brand"><div class="l">Headcount activo</div><div class="v">${fmt(activos.length)}</div><div class="d">todas las empresas</div></div>
       <div class="kpi ${cobertura>=0.95?'green':cobertura>=0.85?'amber':'red'}"><div class="l">Cobertura</div><div class="v">${pct(cobertura)}</div><div class="d">meta 95%</div></div>
       <div class="kpi amber"><div class="l">Vacantes abiertas</div><div class="v">${fmt(abiertas.length)}</div><div class="d">${criticas.length} críticas (+30 días)</div></div>
-      <div class="kpi green"><div class="l">Ingresos del mes</div><div class="v">${fmt(ingresosMes)}</div><div class="d">todos los reclutadores</div></div>
+      <div class="kpi green"><div class="l">Ingresos del mes</div><div class="v">${fmt(ingresosMes)}</div><div class="d">${fmt(I.length)} en el año</div></div>
       <div class="kpi red"><div class="l">Bajas del mes</div><div class="v">${fmt(bajasMes.length)}</div><div class="d">${fmt(B.length)} en el año</div></div>
     </div>
+    <div class="card"><h3>Ingresos vs bajas por mes (${anio})</h3><div class="chartbox"><canvas id="ch-rotacion"></canvas></div></div>
     <div class="grid2">
       <div class="card"><h3>Cobertura por base (semana ${wmax})</h3><div class="chartbox"><canvas id="ch-cob"></canvas></div></div>
       <div class="card"><h3>Tendencia de headcount activo</h3><div class="chartbox"><canvas id="ch-trend"></canvas></div></div>
@@ -304,6 +307,15 @@ VIEWS.dashboard = async function(){
   CHARTS.push(new Chart($('#ch-recl'), {type:'bar', data:{labels:rl,
     datasets:[{label:'Ingresos', data:rl.map(n=>perR[n]||0), backgroundColor:'#4f46e5', borderRadius:5},
               {label:'Meta', data:rl.map(n=>CACHE.recl.find(x=>x.nombre===n)?.meta_ingresos||12), backgroundColor:'#e2e8f0', borderRadius:5}]},
+    options:{plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}}));
+
+  // Chart: ingresos vs bajas por mes
+  const MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  const ingXmes = MESES.map((_,i)=>I.filter(x=>x.fecha_ingreso.slice(5,7)==String(i+1).padStart(2,'0')).length);
+  const bajXmes = MESES.map((_,i)=>B.filter(b=>(b.fecha_baja||'').slice(5,7)==String(i+1).padStart(2,'0')).length);
+  CHARTS.push(new Chart($('#ch-rotacion'), {type:'bar', data:{labels:MESES,
+    datasets:[{label:'Ingresos', data:ingXmes, backgroundColor:'#10b981', borderRadius:5},
+              {label:'Bajas', data:bajXmes, backgroundColor:'#ef4444', borderRadius:5}]},
     options:{plugins:{legend:{position:'bottom'}}, maintainAspectRatio:false}}));
 
   // Chart: bajas por motivo
@@ -657,6 +669,83 @@ function renderSemana(){
       </tbody></table></div>
     </div>`;
 }
+/* ============ INGRESOS ============ */
+VIEWS.ingresos = async function(){
+  await loadCats();
+  const { data } = await sb.from('ingresos').select('*').order('fecha_ingreso',{ascending:false});
+  CACHE.ings = data||[];
+  const MESES_N = {'01':'ENERO','02':'FEBRERO','03':'MARZO','04':'ABRIL','05':'MAYO','06':'JUNIO','07':'JULIO','08':'AGOSTO','09':'SEPTIEMBRE','10':'OCTUBRE','11':'NOVIEMBRE','12':'DICIEMBRE'};
+  const meses = [...new Set(CACHE.ings.map(x=>x.fecha_ingreso.slice(0,7)))].sort().reverse();
+  $('#main').innerHTML = `
+    <h2 class="title">Ingresos ${new Date().getFullYear()}</h2>
+    <div class="subtitle">Bitácora de todas las contrataciones del año</div>
+    <div class="toolbar">
+      <input id="in-q" placeholder="🔍 Buscar nombre, puesto…" style="width:240px" oninput="filtraIng()">
+      <select id="in-mes" onchange="filtraIng()"><option value="">Todos los meses</option>
+        ${meses.map(m=>`<option value="${m}">${MESES_N[m.slice(5,7)]||m}</option>`).join('')}</select>
+      <select id="in-empresa" onchange="filtraIng()"><option value="">Todas las empresas</option>${['FNG','TNIR','TERRENAL','PLAGECO'].map(e=>`<option>${e}</option>`).join('')}</select>
+      <select id="in-base" onchange="filtraIng()"><option value="">Todas las bases</option>${optBases()}</select>
+      <span style="flex:1"></span>
+      <button class="btn sec sm" onclick='csv(CACHE.ingFil||[],"ingresos")'>⬇ CSV</button>
+      <button class="btn" onclick="formIngreso()">+ Registrar ingreso</button>
+    </div>
+    <div class="card"><div id="in-tabla"></div></div>`;
+  filtraIng();
+};
+function filtraIng(){
+  const q = ($('#in-q').value||'').toUpperCase();
+  const me = $('#in-mes').value, em = $('#in-empresa').value, ba = $('#in-base').value;
+  const L = CACHE.ings.filter(x =>
+    (!me || x.fecha_ingreso.startsWith(me)) && (!em || x.empresa===em) && (!ba || x.base===ba) &&
+    (!q || (x.nombre||'').includes(q) || (x.puesto||'').includes(q) || (x.reclutador||'').includes(q)));
+  CACHE.ingFil = L;
+  $('#in-tabla').innerHTML = `<div class="muted" style="margin-bottom:8px">${L.length} ingresos</div>
+    <div class="scroll"><table><thead><tr><th>Fecha</th><th>Sem</th><th>Nombre</th><th>Puesto</th><th>Empresa</th><th>Base</th><th class="right">Sueldo</th><th>Reclutador</th></tr></thead>
+    <tbody>${L.slice(0,300).map(x=>`
+      <tr><td>${x.fecha_ingreso}</td><td>${x.semana??'—'}</td><td><b>${esc(x.nombre)}</b></td>
+      <td>${esc(x.puesto||'—')}</td><td>${esc(x.empresa||'—')}</td><td>${esc(x.base||'—')}</td>
+      <td class="right">${x.sueldo?('$'+fmt(x.sueldo)):'—'}</td><td>${esc(x.reclutador||'—')}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+function formIngreso(){
+  const recls = [...new Set(CACHE.ings.map(x=>x.reclutador).filter(Boolean))].sort();
+  modal(`<h3>Registrar ingreso</h3>
+    <div class="formgrid">
+      <div style="grid-column:span 2"><label>Nombre completo *</label><input id="ig-nombre"></div>
+      <div><label>Fecha de ingreso *</label><input type="date" id="ig-fecha" value="${hoy()}"></div>
+      <div><label>Empresa</label><select id="ig-empresa">${['FNG','TNIR','TERRENAL','PLAGECO'].map(e=>`<option>${e}</option>`).join('')}</select></div>
+      <div><label>Puesto *</label><input id="ig-puesto"></div>
+      <div><label>Área</label><select id="ig-area"><option>ADMINISTRACION</option><option>OPERACIONES</option></select></div>
+      <div><label>Base</label><select id="ig-base">${optBases()}</select></div>
+      <div><label>Sueldo</label><input type="number" id="ig-sueldo"></div>
+      <div style="grid-column:span 2"><label>Reclutador</label><input id="ig-recl" list="ig-recls"><datalist id="ig-recls">${recls.map(r=>`<option value="${esc(r)}">`).join('')}</datalist></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;margin-bottom:14px">
+      <input type="checkbox" id="ig-alta" checked style="width:auto"> Dar de alta también en el maestro de Empleados</label>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn sec" onclick="closeModal()">Cancelar</button>
+      <button class="btn" onclick="saveIngreso()">Registrar</button>
+    </div>`);
+}
+async function saveIngreso(){
+  const nombre = $('#ig-nombre').value.trim().toUpperCase();
+  const puesto = $('#ig-puesto').value.trim().toUpperCase();
+  const fecha = $('#ig-fecha').value;
+  if(!nombre || !puesto || !fecha) return toast('Faltan nombre, puesto o fecha');
+  const row = {
+    nombre, puesto, fecha_ingreso: fecha, semana: semanaISO(fecha),
+    empresa: $('#ig-empresa').value, area: $('#ig-area').value, base: $('#ig-base').value,
+    sueldo: Number($('#ig-sueldo').value)||null, reclutador: $('#ig-recl').value.trim().toUpperCase()||null };
+  const { error } = await sb.from('ingresos').insert(row);
+  if(error) return toast('Error: '+error.message);
+  if($('#ig-alta').checked){
+    await sb.from('empleados').insert({
+      nombre, puesto, empresa: row.empresa, departamento: row.area, base: row.base,
+      fecha_ingreso: fecha, sueldo: row.sueldo, origen_hoja: 'APP' });
+  }
+  closeModal(); toast('🎉 Ingreso registrado'); nav('ingresos');
+}
+
 /* ============ EQUIPO (solo admin) ============ */
 VIEWS.equipo = async function(){
   const { data: perfiles } = await sb.from('perfiles').select('*').order('created_at');
