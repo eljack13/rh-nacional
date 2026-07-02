@@ -100,7 +100,43 @@ tr:hover td{background:#f8fafc}
 .modal-bg.open{display:flex}
 .modal{background:#fff;border-radius:16px;padding:26px;width:min(680px,92vw);max-height:88vh;overflow:auto}
 .modal h3{margin-bottom:16px;font-size:16px}
-@media(max-width:900px){aside{display:none}main{margin-left:0}.grid2{grid-template-columns:1fr}.num-row{grid-template-columns:repeat(3,1fr)}}
+/* ---------- móvil / tablet ---------- */
+#mobilebar{display:none}
+#drawer-bg{display:none}
+@media(max-width:900px){
+  body{font-size:13.5px}
+  #mobilebar{display:flex;align-items:center;gap:12px;position:fixed;top:0;left:0;right:0;height:54px;
+    background:var(--sidebar);color:#fff;padding:0 14px;z-index:60;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  #mobilebar .burger{background:none;border:none;color:#fff;font-size:24px;display:flex;padding:4px}
+  #mobilebar .mlogo{font-weight:800;font-size:16px}
+  #mobilebar .mlogo span{color:#818cf8}
+  #mobilebar .mview{margin-left:auto;font-size:12px;color:#cbd5e1}
+  aside{left:-260px;transition:left .25s ease;z-index:80;box-shadow:none}
+  aside.open{left:0;box-shadow:0 0 40px rgba(0,0,0,.5)}
+  #drawer-bg.open{display:block;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:70}
+  main{margin-left:0;padding:70px 14px 24px}
+  h2.title{font-size:18px}
+  .kpis{grid-template-columns:repeat(2,1fr);gap:10px}
+  .kpi{padding:12px 14px}
+  .kpi .v{font-size:21px}
+  .grid2{grid-template-columns:1fr}
+  .card{padding:14px}
+  .card .chartbox{height:220px}
+  .num-row{grid-template-columns:repeat(3,1fr)}
+  .formgrid{grid-template-columns:1fr 1fr !important}
+  .toolbar{gap:8px}
+  .toolbar input,.toolbar select{flex:1 1 45%;min-width:130px;width:auto !important}
+  .toolbar .btn{flex:1 1 auto}
+  .pill-tabs{flex-wrap:wrap;width:100%}
+  .modal{padding:18px;width:94vw}
+  th,td{padding:7px 8px}
+  #login .box{width:92vw;padding:28px}
+}
+@media(max-width:480px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .formgrid{grid-template-columns:1fr !important}
+  .num-row{grid-template-columns:repeat(3,1fr)}
+}
 </style>
 </head>
 <body>
@@ -119,6 +155,12 @@ tr:hover td{background:#f8fafc}
 
 <!-- APP -->
 <div id="app">
+  <div id="mobilebar">
+    <button class="burger" onclick="toggleDrawer()"><i class="ph ph-list"></i></button>
+    <div class="mlogo">RH <span>Nacional</span></div>
+    <div class="mview" id="m-view"></div>
+  </div>
+  <div id="drawer-bg" onclick="toggleDrawer(false)"></div>
   <aside>
     <div class="logo">RH <span>Nacional</span></div>
     <a href="#dashboard" data-v="dashboard" class="active"><i class="ph ph-chart-pie-slice"></i> Dashboard</a>
@@ -210,9 +252,17 @@ sb.auth.onAuthStateChange((_ev, session) => {
 
 /* ---------- nav ---------- */
 const VIEWS = {};
+const TITULOS = {dashboard:'Dashboard', registro:'Registro diario', vacantes:'Vacantes', candidatos:'Candidatos', empleados:'Empleados', ingresos:'Ingresos', semanal:'Reporte semanal', equipo:'Equipo'};
+function toggleDrawer(force){
+  const open = force !== undefined ? force : !document.querySelector('aside').classList.contains('open');
+  document.querySelector('aside').classList.toggle('open', open);
+  $('#drawer-bg').classList.toggle('open', open);
+}
 function nav(v){
   if(!VIEWS[v]) v = 'dashboard';
   document.querySelectorAll('aside a').forEach(a => a.classList.toggle('active', a.dataset.v===v));
+  toggleDrawer(false);
+  $('#m-view').textContent = TITULOS[v] || '';
   location.hash = v;
   killCharts();
   $('#main').innerHTML = '<p class="muted">Cargando…</p>';
@@ -243,9 +293,12 @@ VIEWS.dashboard = async function(){
     sb.from('operadores_semanal').select('*').eq('anio', anio).order('semana'),
     sb.from('bajas').select('fecha_baja,motivo,base,empresa'),
     sb.from('registro_diario').select('*').gte('fecha', anio+'-01-01'),
-    sb.from('ingresos').select('fecha_ingreso,empresa,area').gte('fecha_ingreso', anio+'-01-01'),
+    sb.from('ingresos').select('fecha_ingreso,empresa,area,base').gte('fecha_ingreso', anio+'-01-01'),
   ]);
-  const E = emp.data||[], R = reqs.data||[], H = hc.data||[], O = ops.data||[], B = bajas.data||[], G = reg.data||[], I = ing.data||[];
+  const FB = CACHE.dashBase || '';
+  const fb = arr => FB ? arr.filter(x => (x.base||'') === FB) : arr;
+  const todasBases = [...new Set([...(emp.data||[]), ...(hc.data||[]), ...(reqs.data||[]), ...(bajas.data||[]), ...(ing.data||[])].map(x=>x.base).filter(Boolean))].sort();
+  const E = fb(emp.data||[]), R = fb(reqs.data||[]), H = fb(hc.data||[]), O = fb(ops.data||[]), B = fb(bajas.data||[]), G = reg.data||[], I = fb(ing.data||[]);
 
   const activos = E.filter(e=>e.estatus==='ACTIVO');
   const abiertas = R.filter(r=>!r.fecha_cubierta);
@@ -263,7 +316,13 @@ VIEWS.dashboard = async function(){
 
   $('#main').innerHTML = `
     <h2 class="title">Dashboard ejecutivo</h2>
-    <div class="subtitle">Resumen general · Semana ${wmax||semanaISO()} · ${new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}</div>
+    <div class="toolbar" style="margin-bottom:16px">
+      <span class="subtitle" style="margin:0;flex:1">Semana ${wmax||semanaISO()} · ${new Date().toLocaleDateString('es-MX',{day:'numeric',month:'long',year:'numeric'})}${FB?` · <b>${esc(FB)}</b>`:''}</span>
+      <select onchange="CACHE.dashBase=this.value; nav('dashboard')" style="max-width:220px">
+        <option value="">Todas las bases</option>
+        ${todasBases.map(b=>`<option ${b===FB?'selected':''}>${esc(b)}</option>`).join('')}
+      </select>
+    </div>
     <div class="kpis">
       <div class="kpi brand"><div class="l">Headcount activo</div><div class="v">${fmt(activos.length)}</div><div class="d">todas las empresas</div></div>
       <div class="kpi ${cobertura>=0.95?'green':cobertura>=0.85?'amber':'red'}"><div class="l">Cobertura</div><div class="v">${pct(cobertura)}</div><div class="d">meta 95%</div></div>
@@ -277,7 +336,7 @@ VIEWS.dashboard = async function(){
       <div class="card"><h3>Tendencia de headcount activo</h3><div class="chartbox"><canvas id="ch-trend"></canvas></div></div>
     </div>
     <div class="grid2">
-      <div class="card"><h3>Ingresos por reclutador (mes actual) vs meta</h3><div class="chartbox"><canvas id="ch-recl"></canvas></div></div>
+      <div class="card"><h3>Ingresos por reclutador (mes actual) vs meta${FB?' <span class="muted" style="font-weight:400;font-size:11px">— todas las bases</span>':''}</h3><div class="chartbox"><canvas id="ch-recl"></canvas></div></div>
       <div class="card"><h3>Bajas por motivo (año)</h3><div class="chartbox"><canvas id="ch-bajas"></canvas></div></div>
     </div>
     <div class="card">
@@ -336,7 +395,7 @@ VIEWS.dashboard = async function(){
 VIEWS.registro = async function(){
   await loadCats();
   const f = hoy();
-  const { data: regs } = await sb.from('registro_diario').select('*').order('fecha',{ascending:false}).limit(120);
+  const { data: regs } = await sb.from('registro_diario').select('*').order('fecha',{ascending:false}).limit(600);
   const cols = ['guias_entrevista','contactados','socioeconomicos','validaciones','premedicos','psicometrias','pruebas_manejo','citas_laboratorio','ingresos'];
   const labels = ['Guías','Contact.','Socioec.','Valid.','Preméd.','Psicom.','P. Manejo','Citas Lab','Ingresos'];
   $('#main').innerHTML = `
@@ -356,14 +415,26 @@ VIEWS.registro = async function(){
     </div>
     <div class="card">
       <div class="toolbar"><h3 style="flex:1">Últimos registros</h3>
-      <button class="btn sec sm" onclick='csv(CACHE.regs,"registro_diario")'><i class="ph ph-download-simple"></i>Exportar CSV</button></div>
-      <div class="scroll"><table><thead><tr><th>Fecha</th><th>Reclutador</th>${labels.map(l=>`<th class="right">${l}</th>`).join('')}<th></th></tr></thead>
-      <tbody>${(regs||[]).map(r=>`<tr><td>${r.fecha}</td><td><b>${esc(r.reclutador)}</b></td>
-        ${cols.map(c=>`<td class="right">${fmt(r[c])}</td>`).join('')}
-        <td><button class="btn sec sm" onclick="delRegistro(${r.id})"><i class="ph ph-x"></i></button></td></tr>`).join('')}</tbody></table></div>
+        <select id="rg-fmes" onchange="filtraReg()"><option value="">Todos los meses</option>
+          ${[...new Set((regs||[]).map(r=>r.fecha.slice(0,7)))].sort().reverse().map(m=>`<option>${m}</option>`).join('')}</select>
+        <select id="rg-frecl" onchange="filtraReg()"><option value="">Todos los reclutadores</option>${optRecl()}</select>
+        <button class="btn sec sm" onclick='csv(CACHE.regFil||[],"registro_diario")'><i class="ph ph-download-simple"></i>Exportar CSV</button></div>
+      <div id="rg-tabla"></div>
     </div>`;
   CACHE.regs = regs||[];
+  CACHE.regCols = cols; CACHE.regLabels = labels;
+  filtraReg();
 };
+function filtraReg(){
+  const me = $('#rg-fmes').value, re = $('#rg-frecl').value;
+  const L = CACHE.regs.filter(r => (!me || r.fecha.startsWith(me)) && (!re || r.reclutador===re));
+  CACHE.regFil = L;
+  $('#rg-tabla').innerHTML = `<div class="muted" style="margin-bottom:8px">${L.length} registros</div>
+    <div class="scroll"><table><thead><tr><th>Fecha</th><th>Reclutador</th>${CACHE.regLabels.map(l=>`<th class="right">${l}</th>`).join('')}<th></th></tr></thead>
+    <tbody>${L.map(r=>`<tr><td>${r.fecha}</td><td><b>${esc(r.reclutador)}</b></td>
+      ${CACHE.regCols.map(c=>`<td class="right">${fmt(r[c])}</td>`).join('')}
+      <td><button class="btn sec sm" onclick="delRegistro(${r.id})"><i class="ph ph-x"></i></button></td></tr>`).join('')}</tbody></table></div>`;
+}
 async function saveRegistro(){
   const cols = ['guias_entrevista','contactados','socioeconomicos','validaciones','premedicos','psicometrias','pruebas_manejo','citas_laboratorio','ingresos'];
   const row = { fecha: $('#rg-fecha').value, reclutador: $('#rg-recl').value, observaciones: $('#rg-obs').value||null };
@@ -384,22 +455,44 @@ VIEWS.vacantes = async function(){
   await loadCats();
   const { data } = await sb.from('v_requisiciones').select('*').order('fecha_requisicion');
   CACHE.reqs = data||[];
-  renderVacantes('ABIERTAS');
-};
-function renderVacantes(filtro){
-  const R = CACHE.reqs.filter(r => filtro==='ABIERTAS' ? !r.fecha_cubierta : filtro==='CUBIERTAS' ? !!r.fecha_cubierta : true);
+  CACHE.vacPill = CACHE.vacPill || 'ABIERTAS';
   $('#main').innerHTML = `
     <h2 class="title">Vacantes / Requisiciones</h2>
     <div class="subtitle">Los días abiertos y el semáforo se calculan automáticamente</div>
     <div class="toolbar">
-      <div class="pill-tabs">
-        ${['ABIERTAS','CUBIERTAS','TODAS'].map(x=>`<button class="${x===filtro?'on':''}" onclick="renderVacantes('${x}')">${x[0]+x.slice(1).toLowerCase()}</button>`).join('')}
+      <div class="pill-tabs" id="vc-pills">
+        ${['ABIERTAS','CUBIERTAS','TODAS'].map(x=>`<button data-p="${x}" class="${x===CACHE.vacPill?'on':''}" onclick="setVacPill('${x}')">${x[0]+x.slice(1).toLowerCase()}</button>`).join('')}
       </div>
       <span style="flex:1"></span>
-      <button class="btn sec sm" onclick='csv(CACHE.reqs,"vacantes")'><i class="ph ph-download-simple"></i>CSV</button>
+      <button class="btn sec sm" onclick='csv(CACHE.vacFil||[],"vacantes")'><i class="ph ph-download-simple"></i>CSV</button>
       <button class="btn" onclick="formVacante()">+ Nueva vacante</button>
     </div>
-    <div class="card"><div class="scroll"><table>
+    <div class="toolbar">
+      <input id="vc-q" placeholder="Buscar vacante, motivo…" style="width:220px" oninput="filtraVac()">
+      <select id="vc-fbase" onchange="filtraVac()"><option value="">Todas las bases</option>${optBases()}</select>
+      <select id="vc-frecl" onchange="filtraVac()"><option value="">Todos los reclutadores</option>${optRecl()}</select>
+      <select id="vc-fcat" onchange="filtraVac()"><option value="">Ambas categorías</option><option>ADMINISTRATIVO</option><option>OPERADOR</option></select>
+      <select id="vc-fsem" onchange="filtraVac()"><option value="">Todo semáforo</option><option>CRÍTICO</option><option>ATENCIÓN</option><option>EN TIEMPO</option></select>
+    </div>
+    <div class="card"><div id="vc-tabla"></div></div>`;
+  filtraVac();
+};
+function setVacPill(p){
+  CACHE.vacPill = p;
+  document.querySelectorAll('#vc-pills button').forEach(b=>b.classList.toggle('on', b.dataset.p===p));
+  filtraVac();
+}
+function filtraVac(){
+  const pill = CACHE.vacPill;
+  const q = ($('#vc-q').value||'').toUpperCase();
+  const ba = $('#vc-fbase').value, re = $('#vc-frecl').value, ca = $('#vc-fcat').value, se = $('#vc-fsem').value;
+  const R = CACHE.reqs.filter(r =>
+    (pill==='ABIERTAS' ? !r.fecha_cubierta : pill==='CUBIERTAS' ? !!r.fecha_cubierta : true) &&
+    (!ba || r.base===ba) && (!re || r.reclutador===re) && (!ca || r.categoria===ca) && (!se || r.semaforo===se) &&
+    (!q || (r.vacante||'').includes(q) || (r.motivo||'').toUpperCase().includes(q) || (r.estatus||'').includes(q)));
+  CACHE.vacFil = R;
+  $('#vc-tabla').innerHTML = `<div class="muted" style="margin-bottom:8px">${R.length} vacantes</div>
+    <div class="scroll"><table>
       <thead><tr><th>Vacante</th><th>Categoría</th><th>Tipo</th><th>Base</th><th>Reclutador</th><th class="right">Sueldo</th><th>Estatus</th><th class="right">Días</th><th>Semáforo</th><th></th></tr></thead>
       <tbody>${R.sort((a,b)=>b.dias_abierta-a.dias_abierta).map(r=>`
         <tr><td><b>${esc(r.vacante)}</b><br><span class="muted" style="font-size:11px">${r.fecha_requisicion}</span></td>
@@ -410,7 +503,7 @@ function renderVacantes(filtro){
           ${!r.fecha_cubierta?`<button class="btn sm" onclick="cubrirVacante(${r.id})"><i class="ph ph-check"></i>Cubierta</button>`:''}
           <button class="btn sec sm" onclick="formVacante(${r.id})">Editar</button>
         </td></tr>`).join('') || '<tr><td colspan="10" class="muted">Sin vacantes</td></tr>'}
-      </tbody></table></div></div>`;
+      </tbody></table></div>`;
 }
 const ESTATUS_REQ = ['BUSQUEDA DE CANDIDATOS','ENTREVISTA 1ER FILTRO','ENTREVISTA JEFE DIRECTO','PSICOMETRIAS','SOCIOECONOMICO','PREMEDICO','CONTRATO PROGRAMADO','PROMOCION INTERNA','PAUSADA'];
 function formVacante(id){
@@ -463,13 +556,28 @@ VIEWS.candidatos = async function(){
     <h2 class="title">Pipeline de candidatos a operador</h2>
     <div class="subtitle">Avanza el estatus de cada candidato conforme pasa el proceso</div>
     <div class="toolbar">
+      <input id="cd-q" placeholder="Buscar candidato…" style="width:200px" oninput="filtraCand()">
+      <select id="cd-fbase" onchange="filtraCand()"><option value="">Todas las bases</option>${optBases()}</select>
+      <select id="cd-frecl" onchange="filtraCand()"><option value="">Todos los reclutadores</option>${optRecl()}</select>
+      <select id="cd-fest" onchange="filtraCand()"><option value="">Todo estatus</option>${ESTATUS_CAND.map(e=>`<option>${e}</option>`).join('')}</select>
       <span style="flex:1"></span>
-      <button class="btn sec sm" onclick='csv(CACHE.cands,"candidatos")'><i class="ph ph-download-simple"></i>CSV</button>
+      <button class="btn sec sm" onclick='csv(CACHE.candFil||[],"candidatos")'><i class="ph ph-download-simple"></i>CSV</button>
       <button class="btn" onclick="formCandidato()">+ Nuevo candidato</button>
     </div>
-    <div class="card"><div class="scroll"><table>
+    <div class="card"><div id="cd-tabla"></div></div>`;
+  filtraCand();
+};
+function filtraCand(){
+  const q = ($('#cd-q').value||'').toUpperCase();
+  const ba = $('#cd-fbase').value, re = $('#cd-frecl').value, es = $('#cd-fest').value;
+  const L = CACHE.cands.filter(c =>
+    (!ba || c.base===ba) && (!re || c.reclutador===re) && (!es || (c.estatus||'').includes(es)) &&
+    (!q || (c.nombre||'').includes(q) || (c.observaciones||'').toUpperCase().includes(q)));
+  CACHE.candFil = L;
+  $('#cd-tabla').innerHTML = `<div class="muted" style="margin-bottom:8px">${L.length} candidatos</div>
+    <div class="scroll"><table>
       <thead><tr><th>#</th><th>Nombre</th><th>Base</th><th>Reclutador</th><th>Estatus</th><th>Observaciones</th><th></th></tr></thead>
-      <tbody>${CACHE.cands.map((c,i)=>`
+      <tbody>${L.map((c,i)=>`
         <tr><td>${i+1}</td><td><b>${esc(c.nombre)}</b></td><td>${esc(c.base||'—')}</td><td>${esc(c.reclutador||'—')}</td>
         <td><select style="width:190px" onchange="setCandEstatus(${c.id}, this.value)">${ESTATUS_CAND.map(e=>`<option ${c.estatus===e?'selected':''}>${e}</option>`).join('')}</select></td>
         <td style="max-width:230px">${esc(c.observaciones||'')}</td>
@@ -477,8 +585,8 @@ VIEWS.candidatos = async function(){
           <button class="btn sm" onclick="ingresarCand(${c.id})" title="Convertir en empleado"><i class="ph ph-check"></i>Ingresó</button>
           <button class="btn sec sm" onclick="bajaCand(${c.id})"><i class="ph ph-x"></i></button>
         </td></tr>`).join('') || '<tr><td colspan="7" class="muted">Sin candidatos activos</td></tr>'}
-      </tbody></table></div></div>`;
-};
+      </tbody></table></div>`;
+}
 function formCandidato(){
   modal(`<h3>Nuevo candidato a operador</h3>
     <div class="formgrid">
@@ -789,25 +897,28 @@ async function crearUsuario(){
   toast('Usuario creado — comparte el correo y contraseña'); nav('equipo');
 }
 
+// Alias entre nombres de base del archivo HC y del maestro de empleados
+const ALIAS_BASE = { 'MINA': 'MINATITLAN', 'SLP CRYO': 'SLP/CRYO' };
 async function generarSemana(){
   const w = semanaISO(), anio = 2026;
-  if(!confirm(`Se generará el snapshot de la semana ${w} contando los empleados ACTIVOS por base (los autorizados se copian de la última semana capturada). ¿Continuar?`)) return;
+  if(!confirm(`Se generará el snapshot de la semana ${w}: se copian los autorizados de la última semana capturada y se cuentan los empleados ACTIVOS de esas mismas bases. ¿Continuar?`)) return;
   const { data: emps } = await sb.from('empleados').select('base,puesto,estatus').eq('estatus','ACTIVO');
-  const { data: prev } = await sb.from('hc_semanal').select('*').eq('anio',anio).order('semana',{ascending:false}).limit(40);
+  const { data: prev } = await sb.from('hc_semanal').select('*').eq('anio',anio).neq('semana',w).order('semana',{ascending:false}).limit(60);
   const wprev = prev?.length ? Math.max(...prev.map(p=>p.semana)) : null;
-  const autor = {}; (prev||[]).filter(p=>p.semana===wprev).forEach(p=>autor[p.base]={a:p.admin_autorizados,o:p.op_autorizados});
-  const conteo = {};
-  (emps||[]).forEach(e=>{
-    const b = e.base||'SIN BASE';
-    conteo[b] = conteo[b]||{a:0,o:0};
-    if((e.puesto||'').includes('OPERADOR')) conteo[b].o++; else conteo[b].a++;
+  if(!wprev) return toast('No hay semana previa de referencia');
+  const rows = (prev||[]).filter(p=>p.semana===wprev).map(p=>{
+    const base = p.base, real = ALIAS_BASE[base] || base;
+    let a = 0, o = 0;
+    (emps||[]).forEach(e=>{
+      if((e.base||'') !== real) return;
+      if((e.puesto||'').includes('OPERADOR')) o++; else a++;
+    });
+    return { anio, semana: w, base, admin_activos: a, op_activos: o,
+      admin_autorizados: p.admin_autorizados, op_autorizados: p.op_autorizados };
   });
-  const rows = Object.entries(conteo).map(([base,c])=>({
-    anio, semana: w, base, admin_activos: c.a, op_activos: c.o,
-    admin_autorizados: autor[base]?.a||0, op_autorizados: autor[base]?.o||0 }));
   const { error } = await sb.from('hc_semanal').upsert(rows, { onConflict: 'anio,semana,base' });
   if(error) return toast('Error: '+error.message);
-  toast(`Snapshot de la semana ${w} generado (${rows.length} bases)`); nav('semanal');
+  toast(`Snapshot de la semana ${w} generado (${rows.length} bases, referencia semana ${wprev})`); nav('semanal');
 }
 </script>
 </body>
